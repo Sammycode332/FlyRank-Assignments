@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 const app = express();
-
+app.use(express.json());
 interface Task {
   id: number;
   title: string;
@@ -91,6 +91,22 @@ app.get('/tasks/:id',(req:Request,res:Response)=>{
     return;
   }
   res.json(task)
+})
+app.post('/tasks',(req:Request, res: Response)=>{
+  const { title } = req.body;
+  if(!title || title.trim() === ""){
+    res.status(400).json({error: "Title is required"})
+    return;
+  }
+  const newId = tasks.length >0 ? Math.max(...tasks.map(t=>t.id)) +1:1;
+  const newTask: Task = {
+    id: newId,
+    title: title,
+    done:false,
+  };
+  tasks.push(newTask)
+
+  res.status(201).json(newTask)
 })
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.listen(PORT, ()=>{
