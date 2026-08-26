@@ -108,6 +108,25 @@ app.post('/tasks',(req:Request, res: Response)=>{
 
   res.status(201).json(newTask)
 })
+app.put('/tasks/:id',(req:Request,res:Response)=>{
+  const taskId = Number(req.params.id)
+  const taskIndex = tasks.findIndex(t=>t.id=== taskId)
+  if(taskIndex === -1){
+    res.status(404).json({error:"Task not found"});
+    return
+  }
+  const {title, done } = req.body;
+  if(title !== undefined && title.trim()=== ""){
+    res.status(400).json({error: "Title cannpt be empty"})
+    return;
+  }
+  const existingTask = tasks[taskIndex]!;
+  if (title !== undefined) existingTask.title = title;
+  if (done !== undefined) existingTask.done = done;
+
+res.status(200).json(existingTask);
+})
+
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.listen(PORT, ()=>{
     console.log(`Server is running on http://localhost:${PORT}`)
