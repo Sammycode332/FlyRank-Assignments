@@ -151,6 +151,8 @@ app.get('/health', (req: Request, res: Response) => {
  *                 $ref: '#/components/schemas/Task'
  */
 app.get('/tasks', (req: Request, res: Response) => {
+  const tasks = db.prepare('SELECT * FROM tasks ').all()
+
   res.json(tasks);
 });
 
@@ -181,7 +183,7 @@ app.get('/tasks', (req: Request, res: Response) => {
 app.get('/tasks/:id', (req: Request, res: Response) => {
   const taskId = Number(req.params.id);
 
-  const task = tasks.find(t => t.id === taskId);
+  const task = db.prepare('SELECT * FROM tasks where id = ?').get(taskId)
 
   if (!task) {
     res.status(404).json({
