@@ -1,6 +1,6 @@
 # Task CRUD API
 
-A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, with interactive API documentation using **Swagger UI**.
+A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, backed by a **SQLite database** (via `better-sqlite3`), with interactive API documentation using **Swagger UI**.
 
 ## Features
 
@@ -12,6 +12,7 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, with
 * Health check endpoint
 * API information endpoint
 * Interactive Swagger API documentation
+* Persistent storage with SQLite
 * TypeScript type safety
 
 ## Technologies Used
@@ -19,6 +20,7 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, with
 * **Node.js**
 * **Express.js**
 * **TypeScript**
+* **better-sqlite3**
 * **Swagger UI Express**
 * **Swagger JSDoc**
 
@@ -29,7 +31,8 @@ task-api/
 │
 ├── src/
 │   └── index.ts
-│
+├── screenshots/
+├── tasks.db
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -68,6 +71,8 @@ The server will run on:
 ```text
 http://localhost:3000
 ```
+
+On first run, a `tasks.db` SQLite file is created automatically in the project root, and the `tasks` table is seeded with 3 example tasks if it's empty.
 
 ## API Documentation
 
@@ -135,7 +140,7 @@ Example response:
 /tasks
 ```
 
-Returns all tasks.
+Returns all tasks from the database.
 
 Example response:
 
@@ -144,20 +149,22 @@ Example response:
   {
     "id": 1,
     "title": "Learn TypeScript",
-    "done": false
+    "done": 0
   },
   {
     "id": 2,
     "title": "Build a CRUD API",
-    "done": false
+    "done": 0
   },
   {
     "id": 3,
     "title": "Test with Swagger",
-    "done": true
+    "done": 1
   }
 ]
 ```
+
+> Note: SQLite stores booleans as `0`/`1` under the hood, so `done` is returned as an integer.
 
 ---
 
@@ -181,7 +188,7 @@ Example response:
 {
   "id": 1,
   "title": "Learn TypeScript",
-  "done": false
+  "done": 0
 }
 ```
 
@@ -223,7 +230,7 @@ Example response:
 {
   "id": 4,
   "title": "Learn Express",
-  "done": false
+  "done": 0
 }
 ```
 
@@ -233,7 +240,7 @@ Status code:
 201 Created
 ```
 
-If the title is missing:
+If the title is missing or empty:
 
 ```json
 {
@@ -278,7 +285,7 @@ Example response:
 {
   "id": 1,
   "title": "Learn TypeScript and Express",
-  "done": true
+  "done": 1
 }
 ```
 
@@ -290,6 +297,20 @@ For example:
 {
   "done": true
 }
+```
+
+If the title is sent but empty:
+
+```json
+{
+  "error": "Title cannot be empty"
+}
+```
+
+Status code:
+
+```text
+400 Bad Request
 ```
 
 If the task doesn't exist:
@@ -330,7 +351,7 @@ Example response:
   "task": {
     "id": 2,
     "title": "Build a CRUD API",
-    "done": false
+    "done": 0
   }
 }
 ```
@@ -376,7 +397,7 @@ Each task follows this structure:
 ### Properties
 
 | Property | Type    | Description                             |
-| -------- | ------- | --------------------------------------- |
+| -------- | ------- | ---------------------------------------- |
 | `id`     | number  | Unique identifier for the task          |
 | `title`  | string  | Description/name of the task            |
 | `done`   | boolean | Indicates whether the task is completed |
@@ -456,31 +477,37 @@ Body:
 DELETE http://localhost:3000/tasks/1
 ```
 
-## Current Data Storage
+## Screenshots
 
-This project currently stores tasks in an in-memory JavaScript array:
+Screenshots of the API in action (Swagger UI and/or Thunder Client) are available in the [`/screenshots`](./screenshots) folder.
+
+## Data Storage
+
+This project stores tasks in a **SQLite database** (`tasks.db`) using `better-sqlite3`.
 
 ```ts
-let tasks: Task[] = [
-  { id: 1, title: "Learn TypeScript", done: false },
-  { id: 2, title: "Build a CRUD API", done: false },
-  { id: 3, title: "Test with Swagger", done: true }
-];
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    done BOOLEAN NOT NULL
+  );
+`);
 ```
 
-This means the data is reset whenever the server restarts.
+Unlike an in-memory array, data now **persists between server restarts**, since it's saved to disk in `tasks.db`.
 
-A future version can connect the API to a database such as PostgreSQL, MongoDB, or Supabase.
+A future version can connect the API to a hosted database such as PostgreSQL, MySQL, or Supabase.
 
 ## Error Handling
 
 The API returns appropriate HTTP status codes for common situations.
 
 | Status | Meaning                       |
-| ------ | ----------------------------- |
+| ------ | ------------------------------ |
 | `200`  | Request successful            |
 | `201`  | Resource created successfully |
-| `400`  | Invalid request               |
+| `400`  | Invalid request                |
 | `404`  | Resource not found            |
 
 ## Learning Goals
@@ -496,6 +523,7 @@ This project demonstrates the fundamentals of building a REST API with TypeScrip
 * CRUD operations
 * TypeScript interfaces
 * Basic validation
+* SQL database integration (SQLite)
 * Swagger/OpenAPI documentation
 * API testing
 
@@ -503,7 +531,7 @@ This project demonstrates the fundamentals of building a REST API with TypeScrip
 
 Possible improvements include:
 
-* Add a database
+* Switch to a hosted database (PostgreSQL/MySQL)
 * Add authentication
 * Add user accounts
 * Add middleware for validation
