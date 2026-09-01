@@ -1,8 +1,30 @@
 import express, { Request, Response } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
+import Database from 'better-sqlite3'
 
+const db  = new Database('tasks.db');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    done BOOLEAN NOT NULL
+  );
+`);
+const rows = db.prepare(`SELECT * FROM tasks`).all();
+if (rows.length === 0){
+  const insert = db.prepare(`
+    INSERT INTO tasks(id,title,done)
+    VALUES(?,?,?)`)
+    insert.run(1, "Learn TypeScript", 0)
+    insert.run(2, "Build a CRUD API", 0)
+    insert.run(3, "Test with Swagger", 1)
+
+}
+const allTasks = db.prepare('SELECT * FROM tasks').all();
+console.log(allTasks);
 const app = express();
+
 
 app.use(express.json());
 
