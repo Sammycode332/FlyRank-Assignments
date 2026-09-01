@@ -234,18 +234,12 @@ app.post('/tasks', (req: Request, res: Response) => {
     return;
   }
 
-  const newId =
-    tasks.length > 0
-      ? Math.max(...tasks.map(t => t.id)) + 1
-      : 1;
+  const insert = db.prepare(`
+    INSERT INTO tasks(title,done)
+    VALUES(?,?)`);
+  const result = insert.run(title,0)
 
-  const newTask: Task = {
-    id: newId,
-    title: title,
-    done: false,
-  };
-
-  tasks.push(newTask);
+  const newTask= db.prepare('SELECT * FROM tasks where id = ?').get(result.lastInsertRowid)
 
   res.status(201).json(newTask);
 });
