@@ -286,9 +286,9 @@ app.post('/tasks', (req: Request, res: Response) => {
 app.put('/tasks/:id', (req: Request, res: Response) => {
   const taskId = Number(req.params.id);
 
-  const taskIndex = tasks.findIndex(t => t.id === taskId);
+  let existingTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
 
-  if (taskIndex === -1) {
+  if (!existingTask) {
     res.status(404).json({
       error: "Task not found",
     });
@@ -304,16 +304,16 @@ app.put('/tasks/:id', (req: Request, res: Response) => {
     return;
   }
 
-  const existingTask = tasks[taskIndex]!;
-
-  if (title !== undefined) {
-    existingTask.title = title;
-  }
-
-  if (done !== undefined) {
-    existingTask.done = done;
-  }
-
+  const newTitle = title!==undefined ?title: existingTask.title
+  const newDone = done!==undefined ?done: existingTask.done
+  console.log("newTitle:", newTitle);
+  console.log("newDone:", newDone);
+  console.log("taskId:", taskId);  
+  const update = db.prepare(`UPDATE tasks
+    SET title = ?,done=?
+    WHERE id = ?`)
+  update.run(newTitle,Number(newDone),taskId)
+  existingTask =  db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
   res.status(200).json(existingTask);
 });
 
@@ -350,20 +350,20 @@ app.put('/tasks/:id', (req: Request, res: Response) => {
 app.delete('/tasks/:id', (req: Request, res: Response) => {
   const taskId = Number(req.params.id);
 
-  const taskIndex = tasks.findIndex(t => t.id === taskId);
+  const task = db.prepare('SELECT * FROM tasks where id = ?').get(taskId)
 
-  if (taskIndex === -1) {
+  if (!task) {
     res.status(404).json({
       error: "Task not found",
     });
     return;
   }
 
-  const deletedTask = tasks.splice(taskIndex, 1)[0];
+  db.prepare(`DELETE FROM tasks WHERE id = ?`).run(taskId)
 
   res.status(200).json({
     message: "Task deleted successfully",
-    task: deletedTask,
+    task,
   });
 });
 
