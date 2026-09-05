@@ -22,3 +22,5 @@ Thumbs.db
 
 # Optional: uncomment if you don't want to commit the lockfile
 # package-lock.json
+tasks.db
+.env
