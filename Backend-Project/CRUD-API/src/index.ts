@@ -1,13 +1,13 @@
 import 'dotenv/config';
-import { Pool } from 'pg';
-import { Task } from './types'
 import { sqliteTaskRepository } from './repositories/sqlite-task.repository';
+import { postgresTaskRepository } from './repositories/postgres-task.repository';
 import express, { Request, Response } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 
 
-const taskRepository = sqliteTaskRepository
+// const taskRepository = sqliteTaskRepository
+const taskRepository = postgresTaskRepository
 const app = express();
 
 
