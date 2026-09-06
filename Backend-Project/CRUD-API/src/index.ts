@@ -1,44 +1,19 @@
+import 'dotenv/config';
+import { Pool } from 'pg';
+import { Task } from './types'
+import { sqliteTaskRepository } from './repositories/sqlite-task.repository';
 import express, { Request, Response } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
-import Database from 'better-sqlite3'
 
-const db  = new Database('tasks.db');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    done BOOLEAN NOT NULL
-  );
-`);
-const rows = db.prepare(`SELECT * FROM tasks`).all();
-if (rows.length === 0){
-  const insert = db.prepare(`
-    INSERT INTO tasks(id,title,done)
-    VALUES(?,?,?)`)
-    insert.run(1, "Learn TypeScript", 0)
-    insert.run(2, "Build a CRUD API", 0)
-    insert.run(3, "Test with Swagger", 1)
 
-}
-const allTasks = db.prepare('SELECT * FROM tasks').all();
-console.log(allTasks);
+const taskRepository = sqliteTaskRepository
 const app = express();
 
 
 app.use(express.json());
 
-interface Task {
-  id: number;
-  title: string;
-  done: boolean;
-}
 
-let tasks: Task[] = [
-  { id: 1, title: "Learn TypeScript", done: false },
-  { id: 2, title: "Build a CRUD API", done: false },
-  { id: 3, title: "Test with Swagger", done: true },
-];
 
 const swaggerOptions = {
   definition: {
@@ -150,9 +125,8 @@ app.get('/health', (req: Request, res: Response) => {
  *               items:
  *                 $ref: '#/components/schemas/Task'
  */
-app.get('/tasks', (req: Request, res: Response) => {
-  const tasks = db.prepare('SELECT * FROM tasks ').all()
-
+app.get('/tasks', async (req: Request, res: Response) => {
+  const tasks = await taskRepository.getAllTasks()
   res.json(tasks);
 });
 
@@ -180,10 +154,10 @@ app.get('/tasks', (req: Request, res: Response) => {
  *       404:
  *         description: Task not found
  */
-app.get('/tasks/:id', (req: Request, res: Response) => {
+app.get('/tasks/:id', async (req: Request, res: Response) => {
   const taskId = Number(req.params.id);
 
-  const task = db.prepare('SELECT * FROM tasks where id = ?').get(taskId)
+  const task = await taskRepository.getTaskById(taskId)
 
   if (!task) {
     res.status(404).json({
@@ -224,7 +198,7 @@ app.get('/tasks/:id', (req: Request, res: Response) => {
  *       400:
  *         description: Title is required
  */
-app.post('/tasks', (req: Request, res: Response) => {
+app.post('/tasks', async (req: Request, res: Response) => {
   const { title } = req.body;
 
   if (!title || title.trim() === "") {
@@ -234,13 +208,7 @@ app.post('/tasks', (req: Request, res: Response) => {
     return;
   }
 
-  const insert = db.prepare(`
-    INSERT INTO tasks(title,done)
-    VALUES(?,?)`);
-  const result = insert.run(title,0)
-
-  const newTask= db.prepare('SELECT * FROM tasks where id = ?').get(result.lastInsertRowid)
-
+  const newTask = await taskRepository.createTask(title)
   res.status(201).json(newTask);
 });
 
@@ -283,18 +251,8 @@ app.post('/tasks', (req: Request, res: Response) => {
  *       404:
  *         description: Task not found
  */
-app.put('/tasks/:id', (req: Request, res: Response) => {
+app.put('/tasks/:id', async (req: Request, res: Response) => {
   const taskId = Number(req.params.id);
-
-  let existingTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
-
-  if (!existingTask) {
-    res.status(404).json({
-      error: "Task not found",
-    });
-    return;
-  }
-
   const { title, done } = req.body;
 
   if (title !== undefined && title.trim() === "") {
@@ -304,17 +262,16 @@ app.put('/tasks/:id', (req: Request, res: Response) => {
     return;
   }
 
-  const newTitle = title!==undefined ?title: existingTask.title
-  const newDone = done!==undefined ?done: existingTask.done
-  console.log("newTitle:", newTitle);
-  console.log("newDone:", newDone);
-  console.log("taskId:", taskId);  
-  const update = db.prepare(`UPDATE tasks
-    SET title = ?,done=?
-    WHERE id = ?`)
-  update.run(newTitle,Number(newDone),taskId)
-  existingTask =  db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
-  res.status(200).json(existingTask);
+  const updatedTask = await taskRepository.updateTask(taskId, title, done);
+
+  if (!updatedTask) {
+    res.status(404).json({
+      error: "Task not found",
+    });
+    return;
+  }
+
+  res.status(200).json(updatedTask);
 });
 
 /**
@@ -347,23 +304,23 @@ app.put('/tasks/:id', (req: Request, res: Response) => {
  *       404:
  *         description: Task not found
  */
-app.delete('/tasks/:id', (req: Request, res: Response) => {
+app.delete('/tasks/:id', async(req: Request, res: Response) => {
   const taskId = Number(req.params.id);
 
-  const task = db.prepare('SELECT * FROM tasks where id = ?').get(taskId)
+  const deletedTask = await taskRepository.deleteTask(taskId)
 
-  if (!task) {
+  if (!deletedTask) {
     res.status(404).json({
       error: "Task not found",
     });
     return;
   }
 
-  db.prepare(`DELETE FROM tasks WHERE id = ?`).run(taskId)
+ 
 
   res.status(200).json({
     message: "Task deleted successfully",
-    task,
+    deletedTask,
   });
 });
 
