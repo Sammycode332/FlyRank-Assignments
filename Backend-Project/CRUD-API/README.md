@@ -1,6 +1,6 @@
 # Task CRUD API
 
-A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, backed by a **SQLite database** (via `better-sqlite3`), with interactive API documentation using **Swagger UI**.
+A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, backed by **PostgreSQL running in Docker**, with a **repository pattern** allowing the storage layer to be swapped without touching routes, and interactive API documentation using **Swagger UI**.
 
 ## Features
 
@@ -12,7 +12,8 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, back
 * Health check endpoint
 * API information endpoint
 * Interactive Swagger API documentation
-* Persistent storage with SQLite
+* PostgreSQL persistence via Docker + volumes
+* Repository pattern (SQLite and Postgres implementations, swappable via one line)
 * TypeScript type safety
 
 ## Technologies Used
@@ -20,7 +21,10 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, back
 * **Node.js**
 * **Express.js**
 * **TypeScript**
-* **better-sqlite3**
+* **PostgreSQL** (via Docker)
+* **pg** (Postgres client for Node)
+* **Docker & Docker Compose**
+* **better-sqlite3** (earlier implementation, kept as a reference/alternate repository)
 * **Swagger UI Express**
 * **Swagger JSDoc**
 
@@ -30,9 +34,18 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, back
 task-api/
 │
 ├── src/
-│   └── index.ts
+│   ├── index.ts
+│   ├── types.ts
+│   └── repositories/
+│       ├── task.repository.ts          # interface/contract
+│       ├── sqlite-task.repository.ts   # SQLite implementation
+│       └── postgres-task.repository.ts # Postgres implementation
+├── init-db/
+│   └── init.sql
 ├── screenshots/
-├── tasks.db
+├── docker-compose.yml
+├── .env
+├── .env.example
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -58,9 +71,23 @@ Install the dependencies:
 npm install
 ```
 
+Copy the example environment file and adjust if needed:
+
+```bash
+cp .env.example .env
+```
+
 ## Running the Application
 
-Start the development server:
+### 1. Start Postgres in Docker
+
+```bash
+docker compose up -d
+```
+
+This starts a Postgres 16 container, creates a persistent volume (`pgdata`) for the data, and automatically runs `init-db/init.sql` to create the `tasks` table **the first time** the volume is empty.
+
+### 2. Start the API server
 
 ```bash
 npm run dev
@@ -72,7 +99,83 @@ The server will run on:
 http://localhost:3000
 ```
 
-On first run, a `tasks.db` SQLite file is created automatically in the project root, and the `tasks` table is seeded with 3 example tasks if it's empty.
+## Docker Reference
+
+### Start the database (detached / background)
+
+```bash
+docker compose up -d
+```
+
+### Start the database (attached, streaming logs live)
+
+```bash
+docker compose up
+```
+
+### Stop the container (keeps data — safe, normal shutdown)
+
+```bash
+docker compose down
+```
+
+This stops and removes the container, but the `pgdata` volume is untouched — your data is still there next time you run `docker compose up`.
+
+### Stop and wipe all data (fresh start)
+
+```bash
+docker compose down -v
+```
+
+The `-v` flag also deletes the volume — use this only if you want to reset the database completely (e.g. to test `init.sql` running again from scratch).
+
+### Check what's currently running
+
+```bash
+docker compose ps
+```
+
+or view everything (including stopped containers):
+
+```bash
+docker ps -a
+```
+
+### View live logs from the database container
+
+```bash
+docker compose logs -f
+```
+
+## Environment Variables
+
+Connection details are read from `.env` (gitignored). A template is provided in `.env.example`:
+
+```text
+DATABASE_URL=postgresql://username:password@localhost:5432/tasks
+```
+
+## Architecture: Repository Pattern
+
+Routes never talk to the database directly. Instead, they call a `TaskRepository` interface:
+
+```ts
+export interface TaskRepository {
+  getAllTasks(): Promise<Task[]>;
+  getTaskById(id: number): Promise<Task | undefined>;
+  createTask(title: string): Promise<Task>;
+  updateTask(id: number, title?: string, done?: boolean): Promise<Task | undefined>;
+  deleteTask(id: number): Promise<Task | undefined>;
+}
+```
+
+Two implementations exist — `sqliteTaskRepository` and `postgresTaskRepository` — both satisfying the same contract. Switching which database the whole app uses is a single line in `index.ts`:
+
+```ts
+const taskRepository = postgresTaskRepository; // or sqliteTaskRepository
+```
+
+No route, no validation logic, and no other code changes when swapping databases.
 
 ## API Documentation
 
@@ -94,17 +197,13 @@ Swagger allows you to view and test all API endpoints directly from your browser
 /
 ```
 
-Returns basic information about the API.
-
 Example response:
 
 ```json
 {
   "name": "Task API",
   "version": "1.0",
-  "endpoints": [
-    "/tasks"
-  ]
+  "endpoints": ["/tasks"]
 }
 ```
 
@@ -117,8 +216,6 @@ Example response:
 ```text
 /health
 ```
-
-Checks whether the server is running.
 
 Example response:
 
@@ -140,31 +237,15 @@ Example response:
 /tasks
 ```
 
-Returns all tasks from the database.
-
 Example response:
 
 ```json
 [
-  {
-    "id": 1,
-    "title": "Learn TypeScript",
-    "done": 0
-  },
-  {
-    "id": 2,
-    "title": "Build a CRUD API",
-    "done": 0
-  },
-  {
-    "id": 3,
-    "title": "Test with Swagger",
-    "done": 1
-  }
+  { "id": 1, "title": "Learn TypeScript", "done": false },
+  { "id": 2, "title": "Build a CRUD API", "done": false },
+  { "id": 3, "title": "Test with Swagger", "done": true }
 ]
 ```
-
-> Note: SQLite stores booleans as `0`/`1` under the hood, so `done` is returned as an integer.
 
 ---
 
@@ -176,34 +257,16 @@ Example response:
 /tasks/:id
 ```
 
-Example:
-
-```text
-/tasks/1
-```
-
 Example response:
 
 ```json
-{
-  "id": 1,
-  "title": "Learn TypeScript",
-  "done": 0
-}
+{ "id": 1, "title": "Learn TypeScript", "done": false }
 ```
 
-If the task doesn't exist:
+If not found — `404 Not Found`:
 
 ```json
-{
-  "message": "Task 999 not found"
-}
-```
-
-Status code:
-
-```text
-404 Not Found
+{ "message": "Task 999 not found" }
 ```
 
 ---
@@ -219,39 +282,19 @@ Status code:
 Request body:
 
 ```json
-{
-  "title": "Learn Express"
-}
+{ "title": "Learn Express" }
 ```
 
-Example response:
+Response — `201 Created`:
 
 ```json
-{
-  "id": 4,
-  "title": "Learn Express",
-  "done": 0
-}
+{ "id": 4, "title": "Learn Express", "done": false }
 ```
 
-Status code:
-
-```text
-201 Created
-```
-
-If the title is missing or empty:
+If title missing/empty — `400 Bad Request`:
 
 ```json
-{
-  "error": "Title is required"
-}
-```
-
-Status code:
-
-```text
-400 Bad Request
+{ "error": "Title is required" }
 ```
 
 ---
@@ -264,67 +307,28 @@ Status code:
 /tasks/:id
 ```
 
-Example:
-
-```text
-/tasks/1
-```
-
-Request body:
+Request body (either or both fields):
 
 ```json
-{
-  "title": "Learn TypeScript and Express",
-  "done": true
-}
+{ "title": "Learn TypeScript and Express", "done": true }
 ```
 
-Example response:
+Response — `200 OK`:
 
 ```json
-{
-  "id": 1,
-  "title": "Learn TypeScript and Express",
-  "done": 1
-}
+{ "id": 1, "title": "Learn TypeScript and Express", "done": true }
 ```
 
-You can also update only one property.
-
-For example:
+If title sent but empty — `400 Bad Request`:
 
 ```json
-{
-  "done": true
-}
+{ "error": "Title cannot be empty" }
 ```
 
-If the title is sent but empty:
+If not found — `404 Not Found`:
 
 ```json
-{
-  "error": "Title cannot be empty"
-}
-```
-
-Status code:
-
-```text
-400 Bad Request
-```
-
-If the task doesn't exist:
-
-```json
-{
-  "error": "Task not found"
-}
-```
-
-Status code:
-
-```text
-404 Not Found
+{ "error": "Task not found" }
 ```
 
 ---
@@ -337,37 +341,19 @@ Status code:
 /tasks/:id
 ```
 
-Example:
-
-```text
-/tasks/2
-```
-
-Example response:
+Response — `200 OK`:
 
 ```json
 {
   "message": "Task deleted successfully",
-  "task": {
-    "id": 2,
-    "title": "Build a CRUD API",
-    "done": 0
-  }
+  "task": { "id": 2, "title": "Build a CRUD API", "done": false }
 }
 ```
 
-If the task doesn't exist:
+If not found — `404 Not Found`:
 
 ```json
-{
-  "error": "Task not found"
-}
-```
-
-Status code:
-
-```text
-404 Not Found
+{ "error": "Task not found" }
 ```
 
 ---
@@ -384,8 +370,6 @@ Status code:
 
 ## Task Object
 
-Each task follows this structure:
-
 ```json
 {
   "id": 1,
@@ -394,152 +378,71 @@ Each task follows this structure:
 }
 ```
 
-### Properties
-
-| Property | Type    | Description                             |
-| -------- | ------- | ---------------------------------------- |
-| `id`     | number  | Unique identifier for the task          |
-| `title`  | string  | Description/name of the task            |
-| `done`   | boolean | Indicates whether the task is completed |
+| Property | Type    | Description                              |
+| -------- | ------- | ----------------------------------------- |
+| `id`     | number  | Unique identifier for the task            |
+| `title`  | string  | Description/name of the task              |
+| `done`   | boolean | Indicates whether the task is completed   |
 
 ## Testing With Swagger
 
-1. Start the server:
-
-```bash
-npm run dev
-```
-
-2. Open:
-
-```text
-http://localhost:3000/api-docs
-```
-
-3. Select an endpoint.
-
-4. Click **Try it out**.
-
-5. Enter the required parameters or request body.
-
-6. Click **Execute**.
-
-Swagger will show the request, response, and HTTP status code.
+1. `npm run dev`
+2. Open `http://localhost:3000/api-docs`
+3. Select an endpoint → **Try it out** → fill in params/body → **Execute**
 
 ## Testing With Thunder Client
 
-You can also test the API using Thunder Client in VS Code.
-
-### Get all tasks
-
 ```text
-GET http://localhost:3000/tasks
-```
-
-### Get one task
-
-```text
-GET http://localhost:3000/tasks/1
-```
-
-### Create task
-
-```text
-POST http://localhost:3000/tasks
-```
-
-Body:
-
-```json
-{
-  "title": "Learn Swagger"
-}
-```
-
-### Update task
-
-```text
-PUT http://localhost:3000/tasks/1
-```
-
-Body:
-
-```json
-{
-  "title": "Learn TypeScript properly",
-  "done": true
-}
-```
-
-### Delete task
-
-```text
+GET    http://localhost:3000/tasks
+GET    http://localhost:3000/tasks/1
+POST   http://localhost:3000/tasks      Body: { "title": "Learn Swagger" }
+PUT    http://localhost:3000/tasks/1    Body: { "title": "Learn TypeScript properly", "done": true }
 DELETE http://localhost:3000/tasks/1
 ```
 
 ## Screenshots
 
-Screenshots of the API in action (Swagger UI and/or Thunder Client) are available in the [`/screenshots`](./screenshots) folder.
+Screenshots of the API and Docker containers running are available in the [`/screenshots`](./screenshots) folder.
 
-## Data Storage
+## Persistence Proof
 
-This project stores tasks in a **SQLite database** (`tasks.db`) using `better-sqlite3`.
+To confirm data survives restarts:
 
-```ts
-db.exec(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    done BOOLEAN NOT NULL
-  );
-`);
-```
+1. Create a task via `POST /tasks`
+2. Stop the app (`Ctrl+C`) and the container (`docker compose down` — **without** `-v`)
+3. Restart the container (`docker compose up -d`) and the app (`npm run dev`)
+4. `GET /tasks` — the created task is still present
 
-Unlike an in-memory array, data now **persists between server restarts**, since it's saved to disk in `tasks.db`.
-
-A future version can connect the API to a hosted database such as PostgreSQL, MySQL, or Supabase.
+This proves the `pgdata` Docker volume, not the container or the app process, is what actually holds the data.
 
 ## Error Handling
 
-The API returns appropriate HTTP status codes for common situations.
-
-| Status | Meaning                       |
+| Status | Meaning                        |
 | ------ | ------------------------------ |
-| `200`  | Request successful            |
-| `201`  | Resource created successfully |
+| `200`  | Request successful             |
+| `201`  | Resource created successfully  |
 | `400`  | Invalid request                |
-| `404`  | Resource not found            |
+| `404`  | Resource not found             |
 
 ## Learning Goals
 
-This project demonstrates the fundamentals of building a REST API with TypeScript:
-
-* Express routing
-* HTTP methods
-* Request parameters
-* Request bodies
-* JSON responses
-* HTTP status codes
-* CRUD operations
-* TypeScript interfaces
-* Basic validation
-* SQL database integration (SQLite)
+* Express routing, HTTP methods, request params/bodies
+* JSON responses, HTTP status codes, CRUD operations
+* TypeScript interfaces and basic validation
+* SQL (SQLite, then PostgreSQL)
+* Docker, Docker Compose, volumes, and persistence
+* Repository pattern for swappable data layers
+* Async/await and Promise-based data access
 * Swagger/OpenAPI documentation
 * API testing
 
 ## Future Improvements
 
-Possible improvements include:
-
-* Switch to a hosted database (PostgreSQL/MySQL)
 * Add authentication
 * Add user accounts
-* Add middleware for validation
-* Add better error handling
 * Add automated tests
-* Add pagination
-* Add filtering and searching
-* Add environment variables
+* Add pagination, filtering, searching
+* Add Redis caching
 * Deploy the API online
 
 ## Author
