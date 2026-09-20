@@ -110,6 +110,30 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+app.get('/public/info', (req: Request, res: Response) => {
+  res.status(200).json({
+    message: "Welcome stranger! This info is public."
+  });
+});
+app.get('/protected/profile',(req:Request,res:Response)=>{
+  const authHeader = req.headers.authorization;
+
+  if(!authHeader){
+    return res.status(401).json({
+      error:"Access token required"
+    });
+  }
+  const parts = authHeader.split(' ');
+  if(parts[0] !== "Bearer" || !parts[1]){
+    return res.status(401).json({
+      error:"Access token required"
+    });
+  }
+  res.status(200).json({
+    message:"You passed the authentication gate"
+  })
+});
+
 /**
  * @swagger
  * /tasks:
