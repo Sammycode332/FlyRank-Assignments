@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import supabase from './supabase';
 import { sqliteTaskRepository } from './repositories/sqlite-task.repository';
 import { postgresTaskRepository } from './repositories/postgres-task.repository';
 import express, { Request, Response } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
+import { access } from 'node:fs';
 
 
 // const taskRepository = sqliteTaskRepository
@@ -323,8 +325,106 @@ app.delete('/tasks/:id', async(req: Request, res: Response) => {
     deletedTask,
   });
 });
+/**
+ * @swagger
+ * /auth/signup:
+ *   post:
+ *     summary: Create a new user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *       400:
+ *         description: Invalid request
+ */
+app.post('/auth/signup',async(req,res)=>{
+   const { email, password} = req.body
+   if(!email || !password){
+    res.status(400).json({
+      error: "Email and password are required"
+    })
+    return;
+   }
+   const { data, error } = await supabase.auth.signUp({
+   email,
+   password
+   
+});
 
-// Swagger UI
+    if(error){
+        return res.status(400).json({
+          error:error.message
+        });
+    } else {
+        res.status(201).json(data.user);
+    }
+})
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Log in a user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       400:
+ *         description: Email and password are required
+ *       401:
+ *         description: Invalid login credentials
+ */
+app.post('/auth/login',async(req,res)=>{
+  const{ email,password } = req.body
+  if (!email || !password) {
+  res.status(400).json({
+    error: "Email and password are required"
+  });
+  return;
+
+}
+const{data,error} = await supabase.auth.signInWithPassword({
+  email,
+  password
+})
+if(error){
+  console.log(error);
+  return res.status(401).json({  
+    error: "Invalid login credentials"
+  });
+} else {
+  return res.status(200).json({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token
+  });
+}
+})
+// Swagger U
 app.use(
   '/api-docs',
   swaggerUi.serve,
