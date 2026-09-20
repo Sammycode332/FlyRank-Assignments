@@ -115,7 +115,7 @@ app.get('/public/info', (req: Request, res: Response) => {
     message: "Welcome stranger! This info is public."
   });
 });
-app.get('/protected/profile',(req:Request,res:Response)=>{
+app.get('/protected/profile',async(req:Request,res:Response)=>{
   const authHeader = req.headers.authorization;
 
   if(!authHeader){
@@ -124,13 +124,26 @@ app.get('/protected/profile',(req:Request,res:Response)=>{
     });
   }
   const parts = authHeader.split(' ');
+  
   if(parts[0] !== "Bearer" || !parts[1]){
     return res.status(401).json({
       error:"Access token required"
     });
   }
-  res.status(200).json({
-    message:"You passed the authentication gate"
+
+  const token = parts[1]
+
+  const {data,error } = await supabase.auth.getUser(token);
+
+  if(error){
+    return res.status(401).json({
+      error: "Invalid or expired token"
+    })
+  }
+  return res.status(200).json({
+    id:data.user.id,
+    email:data.user.email,
+    created_at:data.user.created_at
   })
 });
 
