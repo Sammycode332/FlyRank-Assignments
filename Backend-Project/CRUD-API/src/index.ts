@@ -6,7 +6,7 @@ import express, { Request, Response } from 'express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { access } from 'node:fs';
-
+import authMiddleware from './middleware/auth.middleware';
 
 // const taskRepository = sqliteTaskRepository
 const taskRepository = postgresTaskRepository
@@ -115,37 +115,22 @@ app.get('/public/info', (req: Request, res: Response) => {
     message: "Welcome stranger! This info is public."
   });
 });
-app.get('/protected/profile',async(req:Request,res:Response)=>{
-  const authHeader = req.headers.authorization;
-
-  if(!authHeader){
-    return res.status(401).json({
-      error:"Access token required"
-    });
-  }
-  const parts = authHeader.split(' ');
-  
-  if(parts[0] !== "Bearer" || !parts[1]){
-    return res.status(401).json({
-      error:"Access token required"
-    });
-  }
-
-  const token = parts[1]
-
-  const {data,error } = await supabase.auth.getUser(token);
-
-  if(error){
-    return res.status(401).json({
-      error: "Invalid or expired token"
-    })
-  }
+app.get('/protected/profile',authMiddleware,async(req:Request,res:Response)=>{
+  const user =  req.user
   return res.status(200).json({
-    id:data.user.id,
-    email:data.user.email,
-    created_at:data.user.created_at
+    id:user?.id,
+    email:user?.email,
+    created_at:user?.created_at
   })
 });
+app.get('/protected/dashboard',authMiddleware,async(req:Request,res:Response)=>{
+  return res.status(200).json({
+    message:"welcome to your dashboard",
+    user:req.user
+  });
+});
+
+
 
 /**
  * @swagger
@@ -408,6 +393,20 @@ app.post('/auth/signup',async(req,res)=>{
     } else {
         res.status(201).json(data.user);
     }
+})
+app.post('/auth/logout',authMiddleware,async(req:Request,res:Response)=>{
+  const token = req.token
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication token is required' })
+  }
+  const { error } = await supabase.auth.admin.signOut(token);
+
+  if(error){
+    return res.status(401).json({
+      error: "Unable to logout"
+    })
+  }
+  return res.status(204).send()
 })
 /**
  * @swagger

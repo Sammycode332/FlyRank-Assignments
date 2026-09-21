@@ -7,23 +7,25 @@ async function authMiddleware(req: Request, res: Response,next:NextFunction) {
 
     if (!authHeader) {
         return res.status(401).json({
-            error: "Unauthorized"
+            error: "Access token required"
         });
     }
     const parts = authHeader.split(' ');
     if(parts[0]!== "Bearer" || parts[1] === undefined){
         return res.status(401).json({
-            error: "Invalid authorization header"
+            error: "Access token required"
         })
     }
     const token = parts[1]
-    const {data, error} = await supabase.auth.getUser(token)
+    const { data, error} = await supabase.auth.getUser(token)
 
     if(error){
         return res.status(401).json({
-            error: "Invalid token"
+            error: "Invalid or expired token"
         })
     }
+    req.user = data.user;
+    req.token = token
     next()
 }
 export default authMiddleware
