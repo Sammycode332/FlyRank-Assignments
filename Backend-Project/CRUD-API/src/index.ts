@@ -17,6 +17,7 @@ app.use(express.json());
 
 
 
+
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
@@ -48,11 +49,21 @@ const swaggerOptions = {
           },
         },
       },
+
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
     },
   },
 
   apis: ['./src/index.ts'],
 };
+
+
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
@@ -115,6 +126,22 @@ app.get('/public/info', (req: Request, res: Response) => {
     message: "Welcome stranger! This info is public."
   });
 });
+
+/**
+ * @swagger
+ * /protected/profile:
+ *   get:
+ *     summary: Get the current user's profile
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile
+ *       401:
+ *         description: Missing or invalid authentication token
+ */
+
+
 app.get('/protected/profile',authMiddleware,async(req:Request,res:Response)=>{
   const user =  req.user
   return res.status(200).json({
@@ -123,6 +150,19 @@ app.get('/protected/profile',authMiddleware,async(req:Request,res:Response)=>{
     created_at:user?.created_at
   })
 });
+/**
+ * @swagger
+ * /protected/dashboard:
+ *   get:
+ *     summary: Get the current user's dashboard
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User dashboard
+ *       401:
+ *         description: Missing or invalid authentication token
+ */
 app.get('/protected/dashboard',authMiddleware,async(req:Request,res:Response)=>{
   return res.status(200).json({
     message:"welcome to your dashboard",
@@ -394,20 +434,7 @@ app.post('/auth/signup',async(req,res)=>{
         res.status(201).json(data.user);
     }
 })
-app.post('/auth/logout',authMiddleware,async(req:Request,res:Response)=>{
-  const token = req.token
-  if (!token) {
-    return res.status(401).json({ error: 'Authentication token is required' })
-  }
-  const { error } = await supabase.auth.admin.signOut(token);
 
-  if(error){
-    return res.status(401).json({
-      error: "Unable to logout"
-    })
-  }
-  return res.status(204).send()
-})
 /**
  * @swagger
  * /auth/login:
@@ -459,6 +486,34 @@ if(error){
     refresh_token: data.session.refresh_token
   });
 }
+})
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logs out the user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       204:
+ *         description: Successful logout
+ *       401:
+ *         description: Missing or invalid authentication token
+ */
+
+app.post('/auth/logout',authMiddleware,async(req:Request,res:Response)=>{
+  const token = req.token
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication token is required' })
+  }
+  const { error } = await supabase.auth.signOut();
+
+  if(error){
+    return res.status(401).json({
+      error: "Unable to logout"
+    })
+  }
+  return res.status(204).send()
 })
 // Swagger U
 app.use(
