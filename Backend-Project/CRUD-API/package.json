@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "better-sqlite3": "^13.0.3",
     "body-parser": "^2.3.0",
     "cors": "^2.8.6",
