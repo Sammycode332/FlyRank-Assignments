@@ -12,6 +12,13 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, back
 * Health check endpoint
 * API information endpoint
 * Interactive Swagger API documentation
+* Supabase Authentication
+* User signup and login
+* JWT-based authentication
+* Protected profile and dashboard routes
+* Authentication middleware
+* Secure logout endpoint
+* Swagger Bearer token authentication
 * PostgreSQL persistence via Docker + volumes
 * Repository pattern (SQLite and Postgres implementations, swappable via one line)
 * TypeScript type safety
@@ -27,18 +34,21 @@ A simple **CRUD REST API** built with **Node.js, Express, and TypeScript**, back
 * **better-sqlite3** (earlier implementation, kept as a reference/alternate repository)
 * **Swagger UI Express**
 * **Swagger JSDoc**
+* **Supabase Auth** (authentication and JWT management)
+* **@supabase/supabase-js** (Supabase JavaScript client)
 
 ## Project Structure
 
 ```text
 task-api/
+
 │
 ├── src/
 │   ├── index.ts
 │   ├── types.ts
 │   └── repositories/
 │       ├── task.repository.ts          # interface/contract
-│       ├── sqlite-task.repository.ts   # SQLite implementation
+│       ├── sqlite-task.repository.ts  # SQLite implementation
 │       └── postgres-task.repository.ts # Postgres implementation
 ├── init-db/
 │   └── init.sql
@@ -155,17 +165,36 @@ Connection details are read from `.env` (gitignored). A template is provided in 
 DATABASE_URL=postgresql://username:password@localhost:5432/tasks
 ```
 
+### Supabase Authentication
+
+The authentication system uses the following Supabase environment variables:
+
+```text
+SUPABASE_URL=your_supabase_url
+SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
+SUPABASE_SECRET_KEY=your_supabase_secret_key
+SUPABASE_JWKS_URL=your_supabase_jwks_url
+```
+
+The `.env` file is gitignored and must never be committed to GitHub.
+
 ## Architecture: Repository Pattern
 
 Routes never talk to the database directly. Instead, they call a `TaskRepository` interface:
 
 ```ts
 export interface TaskRepository {
+
   getAllTasks(): Promise<Task[]>;
+
   getTaskById(id: number): Promise<Task | undefined>;
+
   createTask(title: string): Promise<Task>;
+
   updateTask(id: number, title?: string, done?: boolean): Promise<Task | undefined>;
+
   deleteTask(id: number): Promise<Task | undefined>;
+
 }
 ```
 
@@ -182,7 +211,7 @@ No route, no validation logic, and no other code changes when swapping databases
 Swagger UI is available at:
 
 ```text
-http://localhost:3000/api-docs
+http://localhost:3000/docs
 ```
 
 Swagger allows you to view and test all API endpoints directly from your browser.
@@ -229,7 +258,7 @@ Example response:
 
 # Tasks API
 
-## 3. Get All Tasks
+### 3. Get All Tasks
 
 **GET**
 
@@ -249,7 +278,7 @@ Example response:
 
 ---
 
-## 4. Get a Task by ID
+### 4. Get a Task by ID
 
 **GET**
 
@@ -271,7 +300,7 @@ If not found — `404 Not Found`:
 
 ---
 
-## 5. Create a Task
+### 5. Create a Task
 
 **POST**
 
@@ -299,7 +328,7 @@ If title missing/empty — `400 Bad Request`:
 
 ---
 
-## 6. Update a Task
+### 6. Update a Task
 
 **PUT**
 
@@ -333,7 +362,7 @@ If not found — `404 Not Found`:
 
 ---
 
-## 7. Delete a Task
+### 7. Delete a Task
 
 **DELETE**
 
@@ -358,6 +387,160 @@ If not found — `404 Not Found`:
 
 ---
 
+# Authentication API
+
+This API uses **Supabase Auth** for user authentication.
+
+Users can create an account and log in using their email and password. Supabase Auth manages the user's authentication session and provides a JWT access token.
+
+Protected endpoints require the JWT to be sent using the `Authorization` header:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+### 8. Sign Up
+
+**POST**
+
+```text
+/auth/signup
+```
+
+Request body:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+Response — `201 Created`:
+
+Returns the newly created user.
+
+Missing email or password — `400 Bad Request`.
+
+---
+
+### 9. Login
+
+**POST**
+
+```text
+/auth/login
+```
+
+Request body:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+Response — `200 OK`:
+
+```json
+{
+  "access_token": "<JWT>",
+  "refresh_token": "<refresh-token>"
+}
+```
+
+Invalid credentials — `401 Unauthorized`.
+
+Missing email or password — `400 Bad Request`.
+
+---
+
+### 10. Logout
+
+**POST**
+
+```text
+/auth/logout
+```
+
+Requires:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Response — `204 No Content`.
+
+Missing or invalid authentication token — `401 Unauthorized`.
+
+---
+
+### 11. Get Current User Profile
+
+**GET**
+
+```text
+/protected/profile
+```
+
+Requires:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Response — `200 OK`:
+
+Returns information about the authenticated user.
+
+Missing or invalid authentication token — `401 Unauthorized`.
+
+---
+
+### 12. Get User Dashboard
+
+**GET**
+
+```text
+/protected/dashboard
+```
+
+Requires:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Response — `200 OK`:
+
+Returns the authenticated user's dashboard information.
+
+Missing or invalid authentication token — `401 Unauthorized`.
+
+---
+
+## Authentication Middleware
+
+Protected routes use authentication middleware to verify the user's JWT before processing the request.
+
+The middleware:
+
+1. Reads the `Authorization` header.
+2. Extracts the Bearer token.
+3. Verifies the token with Supabase Auth.
+4. Rejects missing or invalid tokens with `401 Unauthorized`.
+5. Attaches the authenticated user to the request.
+6. Allows the request to continue to the protected route.
+
+The middleware is used by:
+
+```text
+/protected/profile
+/protected/dashboard
+/auth/logout
+```
+
 # CRUD Summary
 
 | Operation     | HTTP Method | Endpoint     |
@@ -367,6 +550,16 @@ If not found — `404 Not Found`:
 | Get one task  | GET         | `/tasks/:id` |
 | Update task   | PUT         | `/tasks/:id` |
 | Delete task   | DELETE      | `/tasks/:id` |
+
+# Authentication Summary
+
+| Operation     | HTTP Method | Endpoint               | Authentication |
+| ------------- | ----------- | ---------------------- | -------------- |
+| Sign up       | POST        | `/auth/signup`         | Public         |
+| Login         | POST        | `/auth/login`          | Public         |
+| Logout        | POST        | `/auth/logout`         | Bearer token   |
+| Get profile   | GET         | `/protected/profile`   | Bearer token   |
+| Get dashboard | GET         | `/protected/dashboard` | Bearer token   |
 
 ## Task Object
 
@@ -378,26 +571,38 @@ If not found — `404 Not Found`:
 }
 ```
 
-| Property | Type    | Description                              |
-| -------- | ------- | ----------------------------------------- |
-| `id`     | number  | Unique identifier for the task            |
-| `title`  | string  | Description/name of the task              |
-| `done`   | boolean | Indicates whether the task is completed   |
+| Property | Type    | Description                             |
+| -------- | ------- | --------------------------------------- |
+| `id`     | number  | Unique identifier for the task          |
+| `title`  | string  | Description/name of the task            |
+| `done`   | boolean | Indicates whether the task is completed |
 
 ## Testing With Swagger
 
 1. `npm run dev`
-2. Open `http://localhost:3000/api-docs`
+2. Open `http://localhost:3000/docs`
 3. Select an endpoint → **Try it out** → fill in params/body → **Execute**
+4. For protected endpoints, click **Authorize** and enter the JWT access token.
+5. Test the protected endpoints using the authenticated request.
 
 ## Testing With Thunder Client
 
 ```text
 GET    http://localhost:3000/tasks
+
 GET    http://localhost:3000/tasks/1
+
 POST   http://localhost:3000/tasks      Body: { "title": "Learn Swagger" }
+
 PUT    http://localhost:3000/tasks/1    Body: { "title": "Learn TypeScript properly", "done": true }
+
 DELETE http://localhost:3000/tasks/1
+```
+
+For protected authentication endpoints, include:
+
+```text
+Authorization: Bearer <access_token>
 ```
 
 ## Screenshots
@@ -417,12 +622,14 @@ This proves the `pgdata` Docker volume, not the container or the app process, is
 
 ## Error Handling
 
-| Status | Meaning                        |
-| ------ | ------------------------------ |
-| `200`  | Request successful             |
-| `201`  | Resource created successfully  |
-| `400`  | Invalid request                |
-| `404`  | Resource not found             |
+| Status | Meaning                                       |
+| ------ | --------------------------------------------- |
+| `200`  | Request successful                            |
+| `201`  | Resource created successfully                 |
+| `204`  | Request successful with no response body      |
+| `400`  | Invalid request                               |
+| `401`  | Missing or invalid authentication credentials |
+| `404`  | Resource not found                            |
 
 ## Learning Goals
 
@@ -435,11 +642,14 @@ This proves the `pgdata` Docker volume, not the container or the app process, is
 * Async/await and Promise-based data access
 * Swagger/OpenAPI documentation
 * API testing
+* Authentication and JWT-based authorization
+* Supabase Auth integration
+* Express authentication middleware
+* Protected API routes
+* Swagger security schemes and Bearer authentication
 
 ## Future Improvements
 
-* Add authentication
-* Add user accounts
 * Add automated tests
 * Add pagination, filtering, searching
 * Add Redis caching
