@@ -517,7 +517,7 @@ app.post('/auth/logout',authMiddleware,async(req:Request,res:Response)=>{
 })
 // Swagger U
 app.use(
-  '/api-docs',
+  '/docs',
   swaggerUi.serve,
   swaggerUi.setup(swaggerSpec)
 );
