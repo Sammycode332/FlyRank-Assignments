@@ -67,6 +67,7 @@ pip install anthropic python-dotenv prompt-toolkit "mcp[cli]==1.8.0"
 
 ```bash
 python main.py
+uv run --with mcp mcp run mcp_server.py
 ```
 
 ## Usage
