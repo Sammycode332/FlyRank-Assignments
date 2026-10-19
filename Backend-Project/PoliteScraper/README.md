@@ -1,45 +1,99 @@
-# Books to Scrape Pipeline
+# PoliteScraper — Books to Scrape
 
-## Target Classification
+A TypeScript web-scraping pipeline that collects and validates book data from [Books to Scrape](https://books.toscrape.com/), a practice website designed for scraping exercises.
 
-**Target website:** [Books to Scrape](https://books.toscrape.com/)
+## Target classification
 
-**Purpose:** Books to Scrape is a fictional online bookstore provided as a practice environment for people learning web scraping. It is suitable for this assignment because it allows us to practise collecting structured information from web pages without targeting an ordinary commercial bookstore.
+**Classification:** Sandbox / practice website.
 
-**Approach:** The scraper will retrieve the catalogue pages, extract links to individual books, and collect the relevant information from each book's page.
+The target is Books to Scrape. At Stage 0, it was selected as a controlled practice target rather than an ordinary commercial bookstore. The scraper is deliberately limited to the first three catalogue pages and their individual book pages.
 
-## Scope
+## Requirements
 
-This project is limited to the first three catalogue pages of Books to Scrape and the 60 individual book pages linked from those catalogues.
+- Node.js with npm
+- Internet access for a fresh run
 
-The scraper will not navigate beyond the specified catalogue pages to discover additional books.
+## Install and run
 
-## Data to Collect
+Clone the repository and enter its directory:
 
-The scraper will aim to collect the following information from each book page:
+```powershell
+git clone https://github.com/Sammycode332/PoliteScraper.git
+cd PoliteScraper
+npm install
+npm run dev
+```
 
-- **Title:** The book's title.
-- **Price:** The listed price of the book.
-- **Availability:** Whether the book is in stock or unavailable.
-- **Rating:** The book's displayed star rating.
-- **Product URL:** The URL of the individual book page.
-- **Author:** The author, if available on the page.
-- **Description:** The book's description, if available on the page.
+The documented run command is `npm run dev`. It executes the TypeScript entry point using `tsx`.
 
-The extracted information will be validated and converted into clean, structured JSON records.
+The scraper discovers books from up to three catalogue pages, removes duplicate URLs, fetches or reuses cached HTML, validates extracted records, and writes JSON outputs under `output/`.
 
-## Robots.txt Observation
+Expected outputs:
 
-The URL `https://books.toscrape.com/robots.txt` returned a `404 Not Found` response when checked.
+- `output/books.json` — valid book records
+- `output/errors.json` — records that failed validation, with error details
+- `output/run-report.json` — summary of the run
 
-No robots.txt file was found at that URL. This observation will be documented rather than interpreted as unrestricted permission to scrape. The project's scope remains limited to the designated practice website and assignment requirements.
+The local `cache/` directory is intentionally excluded from Git. A fresh clone therefore starts without cached HTML and needs network access on its first run.
 
-## Responsible Scraping
+## Record schema
 
-The scraper will identify itself appropriately, use a reasonable delay between requests, and avoid sending unnecessary or excessive requests to the website.
+Each valid record in `output/books.json` contains:
 
-Each page will be treated as untrusted input. Extracted data will be checked before it is stored, and errors on individual pages should not cause the entire pipeline to crash.
+| Field | Type | Meaning |
+|---|---|---|
+| `title` | string | Book title |
+| `product_url` | HTTPS URL string | Individual book page |
+| `price_text` | string | Displayed price text |
+| `price_gbp` | number | Parsed price in pounds sterling |
+| `availability_text` | string | Displayed stock availability |
+| `rating_text` | string | One of `One`, `Two`, `Three`, `Four`, `Five` |
+| `description` | string, null, or omitted | Description when available |
+| `source_page` | HTTPS URL string | Catalogue page where the book was discovered |
+| `fetched_at` | ISO datetime string | Time associated with the fetched or cached record |
 
-The scraper will also produce a short report at the end of each run, summarising what happened during collection.
+Records are validated with Zod before being included in `books.json`. Invalid records are written to `errors.json` with validation messages.
 
-I will not reuse this code on another site without checking its rules and terms first.
+## Politeness and request handling
+
+- **Identification:** sends the user-agent `PoliteScraper/1.0` with a repository URL.
+- **Delay:** waits 500 milliseconds before each uncached catalogue or book-page request.
+- **Timeout:** each network request has a 10-second timeout.
+- **Retries:** retries once after a timeout or HTTP 5xx response, waiting one second before the retry. HTTP 403 and 404 responses are not retried.
+- **Caching:** stores downloaded catalogue and book HTML locally to avoid unnecessary repeat requests. Book cache metadata records the product URL and fetch timestamp.
+- **Scope:** visits at most three catalogue pages and processes unique book URLs discovered from them.
+- **Failure handling:** failed individual book pages are logged and skipped so other books can still be processed.
+
+Cached pages are reused without a freshness check. Delete the local `cache/` directory if you need to fetch the pages again.
+
+## Sample run report
+
+The following is a real report captured from a run on 19 October 2026. All 63 page reads were cache hits, so this demonstrates successful processing of cached data—not a fresh network scrape.
+
+```json
+{
+  "started_at": "2026-10-19T18:18:40.626Z",
+  "duration_ms": 410,
+  "pages_fetched": 0,
+  "cache_hits": 63,
+  "valid_records": 60,
+  "invalid_records": 0,
+  "failed_pages": 0
+}
+```
+
+The report records the start time, duration in milliseconds, number of network pages fetched, cache hits, valid records, invalid records, and failed pages.
+
+## Limitations
+
+This scraper is purpose-built for the current HTML structure of Books to Scrape. If the site's markup changes, selectors or extraction logic may need updating. Cached pages are not automatically refreshed, and author information is not currently extracted into the record schema.
+
+During the initial classification, `https://books.toscrape.com/robots.txt` returned `404 Not Found`. This observation is not treated as permission to scrape other sites or ignore their rules.
+
+## Why no browser was needed
+
+The required book data is already present in the HTML returned by the server, so a browser would add execution cost without providing useful additional information for this assignment.
+
+## Ethics
+
+Use an official API when one exists. Never bypass logins, paywalls, or blocks. Collect only the data needed for the stated purpose, respect the target site's rules, and check the terms and permissions before adapting this scraper to another website.

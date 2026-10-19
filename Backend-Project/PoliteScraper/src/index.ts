@@ -366,7 +366,7 @@ await writeFile(
     "utf-8"
 )
 await writeFile(
-    "errors.json",
+    "output/errors.json",
     JSON.stringify(invalidBooks,null,2),
     "utf-8"
 )
