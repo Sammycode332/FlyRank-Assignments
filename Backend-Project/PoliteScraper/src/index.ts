@@ -4,6 +4,12 @@ import { join } from "node:path";
 import{ z } from "zod";
 //the above tools imimorted are need ed to create acache directory
 
+const runStartedAt = new Date();
+const runStartedMs = Date.now();
+
+let pagesFetched = 0;
+let cacheHits= 0;
+let failedPages = 0;
 const CatalogueURL: string = "https://books.toscrape.com/"
 
 const CacheDirectory: string= "cache"
@@ -21,6 +27,44 @@ function getBookCacheFilePath(bookNumber: number): string{
 function getBookTimeStampFilePath(bookNumber: number): string{
     const filename = `book-page-${bookNumber}.json`;
     return join(CacheDirectory,filename)
+}
+async function fetchWithRetry(url: string): Promise<Response> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const response = await fetch(url, {
+                headers: { "User-Agent": userAgentidentifier },
+                signal: AbortSignal.timeout(10000)
+            });
+
+            if (response.status >= 500 && response.status <= 599) {
+                if (attempt === 1) {
+                    console.log(`SERVER ERROR ${response.status}. Retrying once...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+            }
+
+            if (!response.ok) {
+                throw new Error(`Request failed: ${response.status}`);
+            }
+
+            return response;
+        } catch (error) {
+            const isTimeout =
+                error instanceof Error &&
+                (error.name === "TimeoutError" || error.name === "AbortError");
+
+            if (isTimeout && attempt === 1) {
+                console.log("Request timed out. Retrying once...");
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
+            }
+
+            throw error;
+        }
+    }
+
+    throw new Error(`Request failed after retry: ${url}`);
 }
 async function getBookPageHtml(
     productUrl: string,
@@ -43,6 +87,7 @@ if (cachedUrl !== productUrl) {
 }
 
     console.log(`CACHE HIT: book ${bookNumber}`);
+    cacheHits++
     return {
     html,
     fetchedAt: timestampData.fetched_at
@@ -61,15 +106,9 @@ catch(error){
     await mkdir(CacheDirectory, { recursive: true });
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    const response = await fetch(productUrl, {
-    headers: { "User-Agent": userAgentidentifier },
-    signal: AbortSignal.timeout(10000)
-});
-   if (response.status !== 200) {
-       throw new Error(`Request failed for book ${bookNumber}: ${response.status}`);
-   }
+   const response = await fetchWithRetry(productUrl);
    const html = await response.text();
-
+   pagesFetched++
     await writeFile(cacheFilePath, html, "utf-8");
 
    const fetchedAt = new Date().toISOString();
@@ -98,10 +137,11 @@ async function getPageHtml(
     pageNumber: number
 ): Promise<string> {
     const cacheFilePath = getCacheFilePath(pageNumber);
-2
+
     try {
         const html = await readFile(cacheFilePath, "utf-8");
         console.log(`CACHE HIT: page ${pageNumber}`);
+        cacheHits++
         return html;
     } catch (error) {
         if (
@@ -120,19 +160,10 @@ async function getPageHtml(
 
     await new Promise(resolve => setTimeout(resolve, 500)); //ratelimit here 
 
-    const response = await fetch(pageUrl, {
-        headers: {
-            "User-Agent": userAgentidentifier
-        },
-        signal: AbortSignal.timeout(10000)
-    });
-
-    if (response.status !== 200) {
-        throw new Error(`Request failed: ${response.status}`);
-    }
+    const response = await fetchWithRetry(pageUrl);
 
     const html = await response.text();
-
+    pagesFetched++
     await writeFile(cacheFilePath, html, "utf-8");
 
     console.log(`FETCH: page ${pageNumber}`);
@@ -271,23 +302,44 @@ console.log(`unique_urls=${uniqueBookLinks.length}`);
 
 const rawRecords =[]
 
-for(let index = 0; index<uniqueBookLinks.length;index++){
-    const productUrl = uniqueBookLinks[index]
-    const bookNumber = index+1
-    const { html, fetchedAt } = await getBookPageHtml(productUrl, bookNumber);
 
-    const details = extractBookDetails(html, productUrl)
+for (let index = 0; index < uniqueBookLinks.length; index++) {
+    const productUrl = uniqueBookLinks[index];
+    const bookNumber = index + 1;
 
-    const priceGbp = normalizePrice(details.price_text);
-    const sourcePage = sourcePageByBookUrl.get(productUrl) ?? null;
-    rawRecords.push({
-    ...details,
-    price_gbp:priceGbp,
-    source_page: sourcePage,
-    fetched_at: fetchedAt
-});
+    try {
+        const { html, fetchedAt } = await getBookPageHtml(
+            productUrl,
+            bookNumber
+        );
 
+        const details = extractBookDetails(html, productUrl);
+
+        const priceGbp = normalizePrice(details.price_text);
+        const sourcePage = sourcePageByBookUrl.get(productUrl) ?? null;
+
+        rawRecords.push({
+            ...details,
+            price_gbp: priceGbp,
+            source_page: sourcePage,
+            fetched_at: fetchedAt
+        });
+
+    } catch (error) {
+        failedPages++;
+
+        const message = error instanceof Error
+            ? error.message
+            : String(error);
+
+        console.error(
+            `FAILED PAGE: book ${bookNumber} | ${productUrl} | ${message}`
+        );
+
+        continue;
+    }
 }
+
 const validBooks = [];
 const invalidBooks = [];
 
@@ -318,6 +370,26 @@ await writeFile(
     JSON.stringify(invalidBooks,null,2),
     "utf-8"
 )
+
+const durationMs = Date.now() - runStartedMs;
+
+const runReport = {
+    started_at: runStartedAt.toISOString(),
+    duration_ms: durationMs,
+    pages_fetched: pagesFetched,
+    cache_hits: cacheHits,
+    valid_records: validBooks.length,
+    invalid_records: invalidBooks.length,
+    failed_pages: failedPages
+};
+
+await writeFile(
+    "output/run-report.json",
+    JSON.stringify(runReport, null, 2),
+    "utf-8"
+);
+
+console.log("Saved run report to output/run-report.json");
 
 
 console.log(`detail_pages=${rawRecords.length}`);
