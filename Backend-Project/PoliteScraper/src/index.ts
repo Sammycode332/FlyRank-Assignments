@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio"
 import { mkdir, readFile, writeFile} from "node:fs/promises";
 import { join } from "node:path"; 
-
+import{ z } from "zod";
 //the above tools imimorted are need ed to create acache directory
 
 const CatalogueURL: string = "https://books.toscrape.com/"
@@ -186,7 +186,32 @@ function cleanDescription(text: string): string | null {
 
     return cleanedText;
 }
+function normalizePrice(priceText: string | null): number |null{
+    if(!priceText){
+        return null
+    }
+    const numericText = priceText.replace("£", "").trim();
+    const price = Number(numericText)
 
+    return Number.isFinite(price)? price: null
+}
+const BookSchema = z.object({
+    title: z.string().min(1),
+    product_url: z.string().url().startsWith("https://"),
+    price_text: z.string().min(1),
+    price_gbp: z.number().finite().nonnegative(),
+    availability_text: z.string().min(1),
+    rating_text: z.enum([
+        "One",
+        "Two",
+        "Three",
+        "Four",
+        "Five"
+    ]),
+    description: z.string().nullable().optional(),
+    source_page: z.string().url().startsWith("https://"),
+    fetched_at: z.string().datetime()
+});
 function extractBookDetails(html:string,productUrl:string){
     const $ =cheerio.load(html)
     
@@ -253,14 +278,46 @@ for(let index = 0; index<uniqueBookLinks.length;index++){
 
     const details = extractBookDetails(html, productUrl)
 
+    const priceGbp = normalizePrice(details.price_text);
     const sourcePage = sourcePageByBookUrl.get(productUrl) ?? null;
     rawRecords.push({
     ...details,
+    price_gbp:priceGbp,
     source_page: sourcePage,
     fetched_at: fetchedAt
 });
 
 }
+const validBooks = [];
+const invalidBooks = [];
+
+for(const record of rawRecords){
+    const result = BookSchema.safeParse(record)
+
+    if(result.success){
+        validBooks.push(result.data)
+    }else{
+        invalidBooks.push({
+            record,
+            errors: result.error.issues.map(issue=>({
+                field:issue.path.join("."),
+                message:issue.message
+            }))
+        })
+    }
+}
+await mkdir("output",{recursive:true});
+
+await writeFile(
+    "output/books.json",
+    JSON.stringify(validBooks,null,2),
+    "utf-8"
+)
+await writeFile(
+    "errors.json",
+    JSON.stringify(invalidBooks,null,2),
+    "utf-8"
+)
 
 
 console.log(`detail_pages=${rawRecords.length}`);
@@ -268,3 +325,7 @@ console.log("First complete raw record:");
 console.log(rawRecords[0]);
 
 console.log(`detail_pages=${rawRecords.length}`);
+console.log(`valid_books=${validBooks.length}`);
+console.log(`invalid_books=${invalidBooks.length}`);
+console.log("Saved valid books to output/books.json");
+console.log("Saved validation failures to errors.json");
